@@ -9,6 +9,8 @@
     wallBounces: document.getElementById('wallBounces'),
     simTime: document.getElementById('simTime'),
     fps: document.getElementById('fps'),
+    result: document.getElementById('resultMessage'),
+    restart: document.getElementById('restartButton'),
   };
 
   const ARENA = {
@@ -73,12 +75,13 @@
       this.vx *= scale;
       this.vy *= scale;
     }
-    bounce(bounds, elasticity = 1.05, minRebound = 210) {
+    bounce(bounds, elasticity = 0.96, minRebound = 0) {
       let bounced = false;
       const minX = bounds.x + this.radius;
       const maxX = bounds.x + bounds.width - this.radius;
       const minY = bounds.y + this.radius;
       const maxY = bounds.y + bounds.height - this.radius;
+      const speedBefore = Math.hypot(this.vx, this.vy);
 
       if (this.x < minX) {
         this.x = minX;
@@ -106,6 +109,16 @@
         this.vy = -rebound;
         this.vx += randRange(-18, 18);
         bounced = true;
+      }
+
+      if (bounced) {
+        const maxSpeed = Math.max(speedBefore, minRebound);
+        const speedAfter = Math.hypot(this.vx, this.vy);
+        if (speedAfter > maxSpeed) {
+          const scale = maxSpeed / (speedAfter || 1);
+          this.vx *= scale;
+          this.vy *= scale;
+        }
       }
 
       return bounced;
@@ -284,7 +297,29 @@
     fpsMeter: new FpsMeter(),
     simulationTime: 0,
     collisionCooldown: 0,
+    gameOver: false,
+    winner: null,
   };
+
+  function setResultMessage(text = '') {
+    if (ui.result) {
+      ui.result.textContent = text;
+    }
+  }
+
+  function declareWinner(label) {
+    if (state.gameOver) return;
+    state.gameOver = true;
+    state.winner = label;
+    setResultMessage(`${label}方獲勝了！`);
+  }
+
+  function declareDraw() {
+    if (state.gameOver) return;
+    state.gameOver = true;
+    state.winner = 'draw';
+    setResultMessage('雙方同歸於盡，戰成平手！');
+  }
 
   function resetGame() {
     state.lancer = new Lancer();
@@ -293,6 +328,16 @@
     state.stats.wallBounces = 0;
     state.simulationTime = 0;
     state.collisionCooldown = 0;
+    state.gameOver = false;
+    state.winner = null;
+    setResultMessage('');
+    updateUI();
+  }
+
+  if (ui.restart) {
+    ui.restart.addEventListener('click', () => {
+      resetGame();
+    });
   }
 
   function updateUI(fps) {
@@ -421,6 +466,9 @@
     if (dt <= 0) {
       return;
     }
+    if (state.gameOver) {
+      return;
+    }
 
     state.simulationTime += dt;
     state.collisionCooldown = Math.max(0, state.collisionCooldown - dt);
@@ -433,8 +481,8 @@
     state.shuriken.spin *= Math.pow(0.995, dt * 60);
     state.shuriken.spin = clamp(state.shuriken.spin, -24, 24);
 
-    const lancerBounced = state.lancer.bounce(ARENA, 1.05, 220);
-    const shurikenBounced = state.shuriken.bounce(ARENA, 1.06, 220);
+    const lancerBounced = state.lancer.bounce(ARENA, 0.96, 0);
+    const shurikenBounced = state.shuriken.bounce(ARENA, 0.96, 0);
 
     if (lancerBounced) {
       state.stats.wallBounces += 1;
@@ -461,6 +509,19 @@
       state.collisionCooldown = 0.2;
     }
 
+    if (state.lancer.hp <= 0 && state.shuriken.hp <= 0) {
+      declareDraw();
+      return;
+    }
+    if (state.lancer.hp <= 0) {
+      declareWinner('手裡劍');
+      return;
+    }
+    if (state.shuriken.hp <= 0) {
+      declareWinner('騎槍手');
+      return;
+    }
+
     state.lancer.ensureMomentum(200);
     state.shuriken.ensureMomentum(200);
   }
@@ -474,7 +535,6 @@
   }
 
   resetGame();
-  updateUI();
   requestAnimationFrame((now) => {
     state.fpsMeter.last = now;
     requestAnimationFrame(frame);
