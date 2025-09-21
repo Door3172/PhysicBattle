@@ -40,7 +40,7 @@
   }
 
   class Body {
-    constructor({ x, y, vx = 0, vy = 0, mass = 1, drag = 1, radius = 30, hp = 10 }) {
+    constructor({ x, y, vx = 0, vy = 0, mass = 1, drag = 0.998, radius = 30, hp = 10 }) {
       this.x = x;
       this.y = y;
       this.vx = vx;
@@ -62,7 +62,7 @@
       this.vx += ix / this.mass;
       this.vy += iy / this.mass;
     }
-    ensureMomentum(minSpeed = 160) {
+    ensureMomentum(minSpeed = 220) {
       const speed = Math.hypot(this.vx, this.vy);
       if (speed >= minSpeed) return;
       if (speed === 0) {
@@ -75,7 +75,7 @@
       this.vx *= scale;
       this.vy *= scale;
     }
-    bounce(bounds, elasticity = 0.96, minRebound = 0) {
+    bounce(bounds, elasticity = 0.92, minRebound = 20) {
       let bounced = false;
       const minX = bounds.x + this.radius;
       const maxX = bounds.x + bounds.width - this.radius;
@@ -87,13 +87,13 @@
         this.x = minX;
         const rebound = Math.max(Math.abs(this.vx) * elasticity, minRebound);
         this.vx = rebound;
-        this.vy += randRange(-18, 18);
+        this.vy += randRange(-24, 24);  // 增加隨機擾動，提升趣味
         bounced = true;
       } else if (this.x > maxX) {
         this.x = maxX;
         const rebound = Math.max(Math.abs(this.vx) * elasticity, minRebound);
         this.vx = -rebound;
-        this.vy += randRange(-18, 18);
+        this.vy += randRange(-24, 24);
         bounced = true;
       }
 
@@ -101,18 +101,18 @@
         this.y = minY;
         const rebound = Math.max(Math.abs(this.vy) * elasticity, minRebound);
         this.vy = rebound;
-        this.vx += randRange(-18, 18);
+        this.vx += randRange(-24, 24);
         bounced = true;
       } else if (this.y > maxY) {
         this.y = maxY;
         const rebound = Math.max(Math.abs(this.vy) * elasticity, minRebound);
         this.vy = -rebound;
-        this.vx += randRange(-18, 18);
+        this.vx += randRange(-24, 24);
         bounced = true;
       }
 
       if (bounced) {
-        const maxSpeed = Math.max(speedBefore, minRebound);
+        const maxSpeed = Math.max(speedBefore * 1.05, minRebound);  // 輕微上限，避免過快
         const speedAfter = Math.hypot(this.vx, this.vy);
         if (speedAfter > maxSpeed) {
           const scale = maxSpeed / (speedAfter || 1);
@@ -133,7 +133,7 @@
         vx: randRange(-260, -140),
         vy: randRange(120, 220),
         mass: 1.4,
-        drag: 1,
+        drag: 0.998,
         radius: 44,
         hp: 12,
       });
@@ -240,7 +240,7 @@
         vx: randRange(220, 320),
         vy: randRange(-220, -140),
         mass: 1,
-        drag: 1,
+        drag: 0.998,
         radius: 40,
         hp: 10,
       });
@@ -415,7 +415,7 @@
     const nx = dx / (dist || 1);
     const ny = dy / (dist || 1);
 
-    const penetration = minDist - dist;
+    const penetration = minDist - dist + 2;  // 額外校正，避免黏住
     if (penetration > 0) {
       const totalMass = lancer.mass + shuriken.mass;
       const correction = penetration / totalMass;
@@ -433,8 +433,10 @@
       return 'none';
     }
 
-    const restitution = 1.02;
-    const impulse = (-(1 + restitution) * relativeVelocity) / (1 / lancer.mass + 1 / shuriken.mass);
+    const restitution = 0.95;
+    let impulse = (-(1 + restitution) * relativeVelocity) / (1 / lancer.mass + 1 / shuriken.mass);
+    const minImpulse = 20;  // 最小衝量，確保彈開
+    impulse = Math.max(Math.abs(impulse), minImpulse) * Math.sign(impulse);
     const ix = impulse * nx;
     const iy = impulse * ny;
 
@@ -450,16 +452,20 @@
       return 'contact';
     }
 
+    // 基於相對速度計算傷害（更物理）
+    const impactSpeed = Math.abs(relativeVelocity);
+    const baseDamage = clamp(impactSpeed / 200, 0.5, 2);  // 速度越大，傷害越高
+
     const lancerPressure = Math.max(0, lancerVelocityAlongNormal);
     const shurikenPressure = Math.max(0, -shurikenVelocityAlongNormal);
 
     if (lancerPressure > shurikenPressure + 4) {
-      return 'shuriken';
+      return { damaged: 'shuriken', damage: baseDamage };
     }
     if (shurikenPressure > lancerPressure + 4) {
-      return 'lancer';
+      return { damaged: 'lancer', damage: baseDamage };
     }
-    return 'both';
+    return { damaged: 'both', damage: baseDamage };
   }
 
   function update(dt) {
@@ -481,8 +487,8 @@
     state.shuriken.spin *= Math.pow(0.995, dt * 60);
     state.shuriken.spin = clamp(state.shuriken.spin, -24, 24);
 
-    const lancerBounced = state.lancer.bounce(ARENA, 0.96, 0);
-    const shurikenBounced = state.shuriken.bounce(ARENA, 0.96, 0);
+    const lancerBounced = state.lancer.bounce(ARENA, 0.92, 20);
+    const shurikenBounced = state.shuriken.bounce(ARENA, 0.92, 20);
 
     if (lancerBounced) {
       state.stats.wallBounces += 1;
@@ -494,17 +500,14 @@
     }
 
     const collisionResult = resolveCollision(state.collisionCooldown <= 0);
-    if (collisionResult === 'lancer' && state.collisionCooldown <= 0) {
-      state.lancer.hp = Math.max(0, state.lancer.hp - 1);
-      state.stats.collisions += 1;
-      state.collisionCooldown = 0.2;
-    } else if (collisionResult === 'shuriken' && state.collisionCooldown <= 0) {
-      state.shuriken.hp = Math.max(0, state.shuriken.hp - 1);
-      state.stats.collisions += 1;
-      state.collisionCooldown = 0.2;
-    } else if (collisionResult === 'both' && state.collisionCooldown <= 0) {
-      state.lancer.hp = Math.max(0, state.lancer.hp - 1);
-      state.shuriken.hp = Math.max(0, state.shuriken.hp - 1);
+    if (typeof collisionResult === 'object' && state.collisionCooldown <= 0) {
+      const { damaged, damage } = collisionResult;
+      if (damaged === 'lancer' || damaged === 'both') {
+        state.lancer.hp = Math.max(0, state.lancer.hp - damage);
+      }
+      if (damaged === 'shuriken' || damaged === 'both') {
+        state.shuriken.hp = Math.max(0, state.shuriken.hp - damage);
+      }
       state.stats.collisions += 1;
       state.collisionCooldown = 0.2;
     }
@@ -522,8 +525,8 @@
       return;
     }
 
-    state.lancer.ensureMomentum(200);
-    state.shuriken.ensureMomentum(200);
+    state.lancer.ensureMomentum(220);
+    state.shuriken.ensureMomentum(220);
   }
 
   function frame(now) {
