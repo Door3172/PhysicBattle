@@ -40,7 +40,17 @@
   }
 
   class Body {
-    constructor({ x, y, vx = 0, vy = 0, mass = 1, drag = 0.998, radius = 30, hp = 10 }) {
+    constructor({
+      x,
+      y,
+      vx = 0,
+      vy = 0,
+      mass = 1,
+      drag = 0.998,
+      radius = 30,
+      collisionRadius = null,
+      hp = 10,
+    }) {
       this.x = x;
       this.y = y;
       this.vx = vx;
@@ -48,6 +58,7 @@
       this.mass = mass;
       this.drag = drag;
       this.radius = radius;
+      this.collisionRadius = collisionRadius ?? radius;
       this.maxHp = hp;
       this.hp = hp;
     }
@@ -77,10 +88,11 @@
     }
     bounce(bounds, elasticity = 0.92, minRebound = 20) {
       let bounced = false;
-      const minX = bounds.x + this.radius;
-      const maxX = bounds.x + bounds.width - this.radius;
-      const minY = bounds.y + this.radius;
-      const maxY = bounds.y + bounds.height - this.radius;
+      const r = this.collisionRadius;
+      const minX = bounds.x + r;
+      const maxX = bounds.x + bounds.width - r;
+      const minY = bounds.y + r;
+      const maxY = bounds.y + bounds.height - r;
       const speedBefore = Math.hypot(this.vx, this.vy);
 
       if (this.x < minX) {
@@ -134,13 +146,18 @@
         vy: randRange(120, 220),
         mass: 1.4,
         drag: 0.998,
-        radius: 44,
+        radius: 38,
+        collisionRadius: 34,
         hp: 12,
       });
-      this.length = 190;
-      this.shaftWidth = 20;
-      this.tipLength = 58;
-      this.tailWidth = 32;
+      this.bodyRadius = 38;
+      this.handRadius = 12;
+      this.handleLength = 26;
+      this.handleWidth = 10;
+      this.guardWidth = 28;
+      this.guardHeight = 16;
+      this.bladeLength = 54;
+      this.bladeWidth = 20;
       this.angle = -Math.PI / 4;
       this.angularVelocity = 0;
       this.turnAssist = 0;
@@ -163,70 +180,153 @@
       ctx.translate(this.x, this.y);
       ctx.rotate(this.angle);
 
-      const half = this.length * 0.5;
-      const shaftGradient = ctx.createLinearGradient(-half, 0, this.tipLength + 18, 0);
-      shaftGradient.addColorStop(0, '#f8f8fb');
-      shaftGradient.addColorStop(0.25, '#d2d7e6');
-      shaftGradient.addColorStop(0.6, '#8f96b2');
-      shaftGradient.addColorStop(1, '#fbe8a6');
+      const bodyRadius = this.bodyRadius;
 
-      ctx.fillStyle = shaftGradient;
-      ctx.strokeStyle = 'rgba(31, 27, 41, 0.45)';
-      ctx.lineWidth = 2.2;
+      const bodyGradient = ctx.createRadialGradient(
+        -bodyRadius * 0.35,
+        -bodyRadius * 0.45,
+        bodyRadius * 0.3,
+        0,
+        0,
+        bodyRadius
+      );
+      bodyGradient.addColorStop(0, '#fff7dc');
+      bodyGradient.addColorStop(0.55, '#f6d274');
+      bodyGradient.addColorStop(1, '#f1aa56');
 
       ctx.beginPath();
+      ctx.arc(0, 0, bodyRadius, 0, Math.PI * 2);
+      ctx.fillStyle = bodyGradient;
+      ctx.fill();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(36, 30, 48, 0.85)';
+      ctx.stroke();
+
+      ctx.save();
+      ctx.translate(-bodyRadius * 0.36, 0);
+      const crestRadius = bodyRadius * 0.32;
+      const crestGradient = ctx.createLinearGradient(0, -crestRadius, 0, crestRadius);
+      crestGradient.addColorStop(0, '#fdfaf4');
+      crestGradient.addColorStop(1, '#d8d5ea');
+      ctx.beginPath();
+      ctx.arc(0, 0, crestRadius, 0, Math.PI * 2);
+      ctx.fillStyle = crestGradient;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(47, 38, 62, 0.55)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(0, -crestRadius * 0.75);
+      ctx.lineTo(crestRadius * 0.45, 0);
+      ctx.lineTo(0, crestRadius * 0.75);
+      ctx.quadraticCurveTo(-crestRadius * 0.35, crestRadius * 0.15, -crestRadius * 0.32, 0);
+      ctx.quadraticCurveTo(-crestRadius * 0.35, -crestRadius * 0.15, 0, -crestRadius * 0.75);
+      ctx.fillStyle = 'rgba(52, 43, 71, 0.9)';
+      ctx.fill();
+      ctx.restore();
+
+      const eyeWidth = bodyRadius * 0.14;
+      const eyeHeight = bodyRadius * 0.36;
+      ctx.beginPath();
+      ctx.ellipse(bodyRadius * 0.18, 0, eyeWidth, eyeHeight, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(43, 35, 60, 0.85)';
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(251, 236, 200, 0.8)';
+      ctx.stroke();
+
+      const highlightGradient = ctx.createLinearGradient(-bodyRadius, -bodyRadius, 0, bodyRadius * 0.5);
+      highlightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
+      highlightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.beginPath();
+      ctx.arc(0, 0, bodyRadius * 0.9, Math.PI * 0.7, Math.PI * 1.3);
+      ctx.strokeStyle = highlightGradient;
+      ctx.lineWidth = 6;
+      ctx.stroke();
+
+      const armLength = bodyRadius * 0.8;
+      const armWidth = this.handRadius * 1.2;
+      const armStart = bodyRadius * 0.2;
+      ctx.fillStyle = 'rgba(224, 204, 255, 0.9)';
+      ctx.beginPath();
       if (ctx.roundRect) {
-        ctx.roundRect(-half, -this.shaftWidth / 2, this.length, this.shaftWidth, 12);
+        ctx.roundRect(armStart, -armWidth / 2, armLength, armWidth, armWidth / 2);
       } else {
-        const h = this.shaftWidth / 2;
-        ctx.moveTo(-half, -h);
-        ctx.lineTo(half, -h);
-        ctx.lineTo(half, h);
-        ctx.lineTo(-half, h);
+        const h = armWidth / 2;
+        ctx.moveTo(armStart, -h);
+        ctx.lineTo(armStart + armLength, -h);
+        ctx.lineTo(armStart + armLength, h);
+        ctx.lineTo(armStart, h);
         ctx.closePath();
       }
       ctx.fill();
+
+      const handX = bodyRadius + this.handRadius * 0.75;
+      ctx.beginPath();
+      ctx.arc(handX, 0, this.handRadius, 0, Math.PI * 2);
+      ctx.fillStyle = '#f7e4bd';
+      ctx.fill();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = 'rgba(42, 34, 54, 0.4)';
       ctx.stroke();
 
-      const ringPositions = [-half + 26, -half + 64, half - 40];
-      ctx.lineWidth = 6;
-      ctx.strokeStyle = 'rgba(58, 50, 82, 0.45)';
-      ringPositions.forEach((pos) => {
-        ctx.beginPath();
-        ctx.moveTo(pos, -this.shaftWidth * 0.55);
-        ctx.lineTo(pos - 4, this.shaftWidth * 0.55);
-        ctx.stroke();
-      });
-
+      const handleStart = bodyRadius * 0.55;
+      const handleGradient = ctx.createLinearGradient(handleStart, 0, handleStart + this.handleLength, 0);
+      handleGradient.addColorStop(0, '#3a2f4d');
+      handleGradient.addColorStop(1, '#51446a');
       ctx.beginPath();
-      ctx.moveTo(this.tipLength + half, 0);
-      ctx.lineTo(this.tipLength + half - 28, -this.shaftWidth * 0.9);
-      ctx.lineTo(this.tipLength - 16, -this.shaftWidth * 0.55);
-      ctx.lineTo(this.tipLength - 16, this.shaftWidth * 0.55);
-      ctx.lineTo(this.tipLength + half - 28, this.shaftWidth * 0.9);
-      ctx.closePath();
-
-      const tipGradient = ctx.createLinearGradient(this.tipLength - 20, 0, this.tipLength + half, 0);
-      tipGradient.addColorStop(0, '#fef6d8');
-      tipGradient.addColorStop(0.4, '#ffe28a');
-      tipGradient.addColorStop(1, '#ff9f68');
-      ctx.fillStyle = tipGradient;
+      if (ctx.roundRect) {
+        ctx.roundRect(handleStart, -this.handleWidth / 2, this.handleLength, this.handleWidth, this.handleWidth / 2);
+      } else {
+        const h = this.handleWidth / 2;
+        ctx.moveTo(handleStart, -h);
+        ctx.lineTo(handleStart + this.handleLength, -h);
+        ctx.lineTo(handleStart + this.handleLength, h);
+        ctx.lineTo(handleStart, h);
+        ctx.closePath();
+      }
+      ctx.fillStyle = handleGradient;
       ctx.fill();
-      ctx.strokeStyle = 'rgba(31, 27, 41, 0.5)';
+
+      const guardX = handleStart + this.handleLength - this.guardHeight / 2;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(guardX, -this.guardWidth / 2, this.guardHeight, this.guardWidth, 6);
+      } else {
+        const h = this.guardWidth / 2;
+        ctx.moveTo(guardX, -h);
+        ctx.lineTo(guardX + this.guardHeight, -h);
+        ctx.lineTo(guardX + this.guardHeight, h);
+        ctx.lineTo(guardX, h);
+        ctx.closePath();
+      }
+      const guardGradient = ctx.createLinearGradient(guardX, -this.guardWidth, guardX, this.guardWidth);
+      guardGradient.addColorStop(0, '#fbe8b6');
+      guardGradient.addColorStop(1, '#f1c66f');
+      ctx.fillStyle = guardGradient;
+      ctx.fill();
       ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(43, 35, 60, 0.55)';
       ctx.stroke();
 
+      const guardEnd = guardX + this.guardHeight;
+      const bladeTip = guardEnd + this.bladeLength;
+      const bladeHalf = this.bladeWidth / 2;
+      const bladeGradient = ctx.createLinearGradient(guardEnd, 0, bladeTip, 0);
+      bladeGradient.addColorStop(0, '#fefefe');
+      bladeGradient.addColorStop(0.5, '#d5d7e7');
+      bladeGradient.addColorStop(1, '#8d95b4');
       ctx.beginPath();
-      ctx.moveTo(-half, 0);
-      ctx.lineTo(-half - this.tailWidth * 0.8, -this.shaftWidth * 0.8);
-      ctx.lineTo(-half - this.tailWidth, 0);
-      ctx.lineTo(-half - this.tailWidth * 0.8, this.shaftWidth * 0.8);
+      ctx.moveTo(guardEnd, -bladeHalf);
+      ctx.lineTo(bladeTip, 0);
+      ctx.lineTo(guardEnd, bladeHalf);
       ctx.closePath();
-      const tailGradient = ctx.createLinearGradient(-half - this.tailWidth, 0, -half, 0);
-      tailGradient.addColorStop(0, '#403a64');
-      tailGradient.addColorStop(1, '#665c8f');
-      ctx.fillStyle = tailGradient;
+      ctx.fillStyle = bladeGradient;
       ctx.fill();
+      ctx.lineWidth = 2.4;
+      ctx.strokeStyle = 'rgba(26, 22, 38, 0.55)';
+      ctx.stroke();
 
       ctx.restore();
     }
@@ -241,7 +341,8 @@
         vy: randRange(-220, -140),
         mass: 1,
         drag: 0.998,
-        radius: 40,
+        radius: 38,
+        collisionRadius: 32,
         hp: 10,
       });
       this.spin = randRange(6, 9);
@@ -254,7 +355,7 @@
       ctx.rotate(this.angle);
 
       const inner = 18;
-      const outer = 46;
+      const outer = 44;
 
       ctx.beginPath();
       for (let i = 0; i < this.spikes * 2; i++) {
@@ -406,7 +507,7 @@
     const dx = shuriken.x - lancer.x;
     const dy = shuriken.y - lancer.y;
     const dist = Math.hypot(dx, dy);
-    const minDist = lancer.radius + shuriken.radius - 4;
+    const minDist = lancer.collisionRadius + shuriken.collisionRadius;
 
     if (dist === 0 || dist >= minDist) {
       return 'none';
@@ -415,10 +516,10 @@
     const nx = dx / (dist || 1);
     const ny = dy / (dist || 1);
 
-    const penetration = minDist - dist + 2;  // 額外校正，避免黏住
+    const penetration = minDist - dist;
     if (penetration > 0) {
       const totalMass = lancer.mass + shuriken.mass;
-      const correction = penetration / totalMass;
+      const correction = (penetration + 1.5) / totalMass;
       lancer.x -= nx * correction * shuriken.mass;
       lancer.y -= ny * correction * shuriken.mass;
       shuriken.x += nx * correction * lancer.mass;
