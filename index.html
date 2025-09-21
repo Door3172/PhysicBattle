@@ -12,33 +12,23 @@
     <header class="hero">
       <div>
         <h1 id="title">PhysicBattle</h1>
-        <p class="tagline">敏捷的手裡劍對決強力的騎槍手，在畫布上演出充滿動態的物理對戰。</p>
-      </div>
-      <div class="controls">
-        <button id="resetBtn" type="button">重新開始 (R)</button>
-        <button id="pauseBtn" type="button">暫停 (P)</button>
-        <button id="slowBtn" type="button">慢動作 (S)</button>
-        <button id="trailBtn" type="button">殘影 (T)</button>
+        <p class="tagline">靜靜觀察兩名鬥士的碰撞與反彈，讓純粹的物理規律主宰整場對決。</p>
       </div>
     </header>
 
     <section class="status" aria-label="對戰數據">
       <dl>
         <div>
-          <dt>累積傷害</dt>
-          <dd id="damage">0</dd>
+          <dt>互撞次數</dt>
+          <dd id="collisions">0</dd>
         </div>
         <div>
-          <dt>反彈次數</dt>
-          <dd id="bounces">0</dd>
+          <dt>牆面反彈</dt>
+          <dd id="wallBounces">0</dd>
         </div>
         <div>
-          <dt>最大連擊</dt>
-          <dd id="combo">0</dd>
-        </div>
-        <div>
-          <dt>能量值</dt>
-          <dd id="energy">0</dd>
+          <dt>模擬時間 (s)</dt>
+          <dd id="simTime">0.0</dd>
         </div>
         <div>
           <dt>FPS</dt>
@@ -48,20 +38,11 @@
     </section>
 
     <section class="board">
-      <canvas id="game" width="920" height="680" role="img" aria-label="PhysicBattle 遊戲畫布"></canvas>
-      <aside class="tips">
-        <h2>操作提示</h2>
-        <ul>
-          <li>滑鼠點擊畫布可對騎槍手施加瞬間衝力。</li>
-          <li>長按 Shift 會暫時聚焦手裡劍並減緩其速度。</li>
-          <li>按 P 可暫停／繼續，按 R 重置，按 S 開啟慢動作，按 T 切換殘影效果。</li>
-          <li>能量值由碰撞補充，越快撞擊越多，能施放更強力的衝擊。</li>
-        </ul>
-      </aside>
+      <canvas id="game" width="920" height="680" role="img" aria-label="PhysicBattle 物理解說畫布"></canvas>
     </section>
 
     <footer class="footer">
-      <p>完全使用原生前端技術製作，可離線運行。盡情嘗試各種碰撞與反彈的極限吧！</p>
+      <p>完全使用原生前端技術製作，可離線運行。坐下來欣賞這場持續不歇的物理模擬吧！</p>
     </footer>
   </main>
 
