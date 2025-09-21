@@ -1,210 +1,582 @@
-// Lance vs Shuriken — pure static canvas game
-// Author: ChatGPT
-// Controls: R to reset, P to pause, click to nudge Lance
 (() => {
+  'use strict';
+
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
 
   const ui = {
     damage: document.getElementById('damage'),
     bounces: document.getElementById('bounces'),
+    combo: document.getElementById('combo'),
+    energy: document.getElementById('energy'),
     fps: document.getElementById('fps'),
-    resetBtn: document.getElementById('resetBtn'),
-    pauseBtn: document.getElementById('pauseBtn'),
   };
 
-  let state;
-  let paused = false;
-  let lastTime = performance.now();
-  let fpsAvg = 0;
+  const buttons = {
+    reset: document.getElementById('resetBtn'),
+    pause: document.getElementById('pauseBtn'),
+    slow: document.getElementById('slowBtn'),
+    trail: document.getElementById('trailBtn'),
+  };
 
-  function randIn(min, max){ return Math.random()*(max-min)+min; }
-  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
-  function vecLen(x, y){ return Math.hypot(x, y); }
+  const ARENA = {
+    x: 70,
+    y: 70,
+    width: canvas.width - 140,
+    height: canvas.height - 140,
+  };
 
-  function reset(){
-    state = {
-      bounds: {x:40, y:40, w:W-80, h:H-80},
-      bounces: 0,
-      damage: 0,
-      lance: {
-        x: W*0.75, y: H*0.25,
-        vx: randIn(-220, -120), vy: randIn(40, 120),
-        angle: 0,
-        targetTurn: 0,
-        len: 70, width: 12, tip: 18
-      },
-      shuriken: {
-        x: W*0.35, y: H*0.6,
-        vx: randIn(120, 220), vy: randIn(-140, -60),
-        angle: 0, spin: randIn(6, 10), // rad/s
-        radius: 26, inner: 12, spikes: 4
+  const randRange = (min, max) => Math.random() * (max - min) + min;
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  const mix = (a, b, t) => a + (b - a) * t;
+  const wrapAngle = (angle) => (angle + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+
+  class FpsMeter {
+    constructor() {
+      this.last = performance.now();
+      this.smoothed = 0;
+    }
+    sample(now) {
+      const dt = (now - this.last) / 1000;
+      this.last = now;
+      const fps = dt > 0 ? 1 / dt : 0;
+      this.smoothed = this.smoothed ? mix(this.smoothed, fps, 0.12) : fps;
+      return { dt: clamp(dt, 0, 0.05), fps: this.smoothed };
+    }
+  }
+
+  class Body {
+    constructor({ x, y, vx = 0, vy = 0, mass = 1, drag = 0.996, radius = 30 }) {
+      this.x = x;
+      this.y = y;
+      this.vx = vx;
+      this.vy = vy;
+      this.mass = mass;
+      this.drag = drag;
+      this.radius = radius;
+    }
+    integrate(dt) {
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      const dragFactor = Math.pow(this.drag, dt * 60);
+      this.vx *= dragFactor;
+      this.vy *= dragFactor;
+    }
+    applyImpulse(ix, iy) {
+      this.vx += ix / this.mass;
+      this.vy += iy / this.mass;
+    }
+    bounce(bounds, elasticity = 0.86) {
+      let bounced = false;
+      const minX = bounds.x + this.radius;
+      const maxX = bounds.x + bounds.width - this.radius;
+      const minY = bounds.y + this.radius;
+      const maxY = bounds.y + bounds.height - this.radius;
+
+      if (this.x < minX) {
+        this.x = minX;
+        this.vx = Math.abs(this.vx) * elasticity;
+        bounced = true;
+      } else if (this.x > maxX) {
+        this.x = maxX;
+        this.vx = -Math.abs(this.vx) * elasticity;
+        bounced = true;
       }
-    };
+
+      if (this.y < minY) {
+        this.y = minY;
+        this.vy = Math.abs(this.vy) * elasticity;
+        bounced = true;
+      } else if (this.y > maxY) {
+        this.y = maxY;
+        this.vy = -Math.abs(this.vy) * elasticity;
+        bounced = true;
+      }
+
+      return bounced;
+    }
   }
 
-  function drawBounds(b){
-    ctx.strokeStyle = '#222';
+  class Lancer extends Body {
+    constructor() {
+      super({
+        x: mix(ARENA.x, ARENA.x + ARENA.width, 0.72),
+        y: mix(ARENA.y, ARENA.y + ARENA.height, 0.28),
+        vx: randRange(-240, -120),
+        vy: randRange(80, 120),
+        mass: 1.4,
+        drag: 0.995,
+        radius: 42,
+      });
+      this.length = 180;
+      this.shaftWidth = 18;
+      this.tipLength = 46;
+      this.tailWidth = 26;
+      this.angle = -Math.PI / 4;
+      this.angularVelocity = 0;
+      this.turnAssist = 0;
+    }
+    tipPosition() {
+      return {
+        x: this.x + Math.cos(this.angle) * (this.tipLength + this.length * 0.5),
+        y: this.y + Math.sin(this.angle) * (this.tipLength + this.length * 0.5),
+      };
+    }
+    alignToVelocity(dt) {
+      const speed = Math.hypot(this.vx, this.vy);
+      if (speed < 10) {
+        this.angularVelocity *= Math.pow(0.6, dt * 60);
+        return;
+      }
+      const target = Math.atan2(this.vy, this.vx) + this.turnAssist;
+      const delta = wrapAngle(target - this.angle);
+      const maxTurn = mix(4.2, 6.6, clamp(speed / 480, 0, 1));
+      this.angle += clamp(delta, -maxTurn * dt, maxTurn * dt);
+      this.angularVelocity = clamp(this.angularVelocity + delta * dt, -6, 6);
+      this.turnAssist = mix(this.turnAssist, 0, dt * 2.2);
+    }
+    draw(ctx, energy) {
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.rotate(this.angle);
+
+      const shaftGradient = ctx.createLinearGradient(-this.length * 0.5, 0, this.tipLength, 0);
+      shaftGradient.addColorStop(0, '#f3f3f3');
+      shaftGradient.addColorStop(0.45, '#c0c6d6');
+      shaftGradient.addColorStop(1, '#ffe169');
+
+      ctx.fillStyle = shaftGradient;
+      ctx.strokeStyle = 'rgba(31,27,41,0.45)';
+      ctx.lineWidth = 2.4;
+
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(-this.length * 0.5, -this.shaftWidth / 2, this.length, this.shaftWidth, 9);
+      } else {
+        const h = this.shaftWidth / 2;
+        ctx.moveTo(-this.length * 0.5, -h);
+        ctx.lineTo(this.length * 0.5, -h);
+        ctx.lineTo(this.length * 0.5, h);
+        ctx.lineTo(-this.length * 0.5, h);
+        ctx.closePath();
+      }
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(this.tipLength, 0);
+      ctx.lineTo(this.length * 0.5 + this.tipLength, 0);
+      ctx.lineTo(this.tipLength - 10, this.shaftWidth * 0.55);
+      ctx.closePath();
+      ctx.fillStyle = '#ffe169';
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(-this.length * 0.5, 0);
+      ctx.lineTo(-this.length * 0.5 - this.tailWidth, -this.shaftWidth * 0.7);
+      ctx.lineTo(-this.length * 0.5 - this.tailWidth * 0.25, 0);
+      ctx.lineTo(-this.length * 0.5 - this.tailWidth, this.shaftWidth * 0.7);
+      ctx.closePath();
+      ctx.fillStyle = '#35324c';
+      ctx.fill();
+
+      const aura = clamp(energy / 140, 0, 1);
+      if (aura > 0.05) {
+        const gradient = ctx.createRadialGradient(
+          this.length * 0.45,
+          0,
+          4,
+          this.length * 0.45,
+          0,
+          mix(18, 68, aura)
+        );
+        gradient.addColorStop(0, 'rgba(255, 225, 105, 0.9)');
+        gradient.addColorStop(1, 'rgba(255, 79, 109, 0)');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(this.length * 0.45, 0, mix(18, 68, aura), 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+  }
+
+  class Shuriken extends Body {
+    constructor() {
+      super({
+        x: mix(ARENA.x, ARENA.x + ARENA.width, 0.32),
+        y: mix(ARENA.y, ARENA.y + ARENA.height, 0.62),
+        vx: randRange(180, 260),
+        vy: randRange(-200, -90),
+        mass: 1,
+        drag: 0.992,
+        radius: 38,
+      });
+      this.spin = randRange(5, 8);
+      this.angle = randRange(0, Math.PI * 2);
+      this.spikes = 5;
+    }
+    draw(ctx) {
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.rotate(this.angle);
+
+      const inner = 15;
+      const outer = 42;
+
+      ctx.beginPath();
+      for (let i = 0; i < this.spikes * 2; i++) {
+        const radius = i % 2 === 0 ? outer : inner;
+        const angle = (i * Math.PI) / this.spikes;
+        const px = Math.cos(angle) * radius;
+        const py = Math.sin(angle) * radius;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+
+      const gradient = ctx.createRadialGradient(0, 0, 4, 0, 0, outer);
+      gradient.addColorStop(0, '#dadef6');
+      gradient.addColorStop(0.55, '#74799b');
+      gradient.addColorStop(1, '#3a3656');
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(18, 16, 33, 0.65)';
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(0, 0, 7, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+
+      ctx.restore();
+    }
+  }
+
+  const input = {
+    shift: false,
+    focus: false,
+  };
+
+  const state = {
+    lancer: new Lancer(),
+    shuriken: new Shuriken(),
+    stats: {
+      damage: 0,
+      bounces: 0,
+      comboChain: 0,
+      maxCombo: 0,
+      energy: 70,
+    },
+    lastImpactTime: 0,
+    comboTimer: 0,
+    fpsMeter: new FpsMeter(),
+    paused: false,
+    slowMotion: false,
+    trail: false,
+  };
+
+  function resetGame() {
+    state.lancer = new Lancer();
+    state.shuriken = new Shuriken();
+    state.stats.damage = 0;
+    state.stats.bounces = 0;
+    state.stats.comboChain = 0;
+    state.stats.maxCombo = 0;
+    state.stats.energy = 70;
+    state.lastImpactTime = 0;
+    state.comboTimer = 0;
+  }
+
+  function updateUI(fps) {
+    ui.damage.textContent = Math.round(state.stats.damage);
+    ui.bounces.textContent = state.stats.bounces;
+    ui.combo.textContent = state.stats.maxCombo;
+    ui.energy.textContent = Math.round(state.stats.energy);
+    ui.fps.textContent = fps ? Math.round(fps) : '0';
+
+    buttons.pause.textContent = state.paused ? '繼續 (P)' : '暫停 (P)';
+    buttons.slow.dataset.active = state.slowMotion ? 'true' : 'false';
+    buttons.trail.dataset.active = state.trail ? 'true' : 'false';
+  }
+
+  function drawArena() {
+    if (state.trail) {
+      ctx.fillStyle = 'rgba(248, 246, 255, 0.12)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    } else {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    const gradient = ctx.createLinearGradient(0, ARENA.y, 0, ARENA.y + ARENA.height);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+    gradient.addColorStop(1, 'rgba(210, 222, 255, 0.92)');
+
+    ctx.fillStyle = gradient;
+    ctx.fillRect(ARENA.x, ARENA.y, ARENA.width, ARENA.height);
+
+    ctx.strokeStyle = 'rgba(42, 34, 54, 0.7)';
+    ctx.lineWidth = 5;
+    ctx.strokeRect(ARENA.x, ARENA.y, ARENA.width, ARENA.height);
+
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(42, 34, 54, 0.08)';
+    ctx.beginPath();
+    const step = 60;
+    for (let x = ARENA.x + step; x < ARENA.x + ARENA.width; x += step) {
+      ctx.moveTo(x, ARENA.y);
+      ctx.lineTo(x, ARENA.y + ARENA.height);
+    }
+    for (let y = ARENA.y + step; y < ARENA.y + ARENA.height; y += step) {
+      ctx.moveTo(ARENA.x, y);
+      ctx.lineTo(ARENA.x + ARENA.width, y);
+    }
+    ctx.stroke();
+  }
+
+  function drawEnergyRing() {
+    const { lancer } = state;
+    const radius = mix(48, 82, clamp(state.stats.energy / 140, 0, 1));
+    ctx.save();
+    ctx.translate(lancer.x, lancer.y);
     ctx.lineWidth = 4;
-    ctx.strokeRect(b.x, b.y, b.w, b.h);
-  }
-
-  function drawLance(l){
-    ctx.save();
-    ctx.translate(l.x, l.y);
-    ctx.rotate(l.angle);
-    // shaft
-    ctx.fillStyle = '#eee';
-    ctx.strokeStyle = '#444';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(255, 79, 109, 0.5)';
     ctx.beginPath();
-    ctx.roundRect(-l.len, -l.width*0.35, l.len, l.width*0.7, 4);
-    ctx.fill(); ctx.stroke();
-    // tip
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(l.tip, 0);
-    ctx.lineTo(-4, l.width*0.5);
-    ctx.closePath();
-    ctx.fillStyle = '#cbd11a';
-    ctx.fill(); ctx.stroke();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.restore();
   }
 
-  function drawShuriken(s){
-    ctx.save();
-    ctx.translate(s.x, s.y);
-    ctx.rotate(s.angle);
-    ctx.fillStyle = '#333';
-    ctx.strokeStyle = '#111';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    const spikes = s.spikes;
-    for(let i=0;i<spikes*2;i++){
-      const r = (i%2===0)? s.radius : s.inner;
-      const a = i * Math.PI / spikes;
-      const px = Math.cos(a)*r;
-      const py = Math.sin(a)*r;
-      if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  function render() {
+    drawArena();
+    drawEnergyRing();
+    state.shuriken.draw(ctx);
+    state.lancer.draw(ctx, state.stats.energy);
+  }
+
+  function resolveImpact() {
+    const tip = state.lancer.tipPosition();
+    const dx = state.shuriken.x - tip.x;
+    const dy = state.shuriken.y - tip.y;
+    const dist = Math.hypot(dx, dy);
+    const minDist = state.shuriken.radius * 0.9;
+
+    if (dist > minDist) return;
+
+    const nx = dx / (dist || 1);
+    const ny = dy / (dist || 1);
+
+    const relVx = state.lancer.vx - state.shuriken.vx;
+    const relVy = state.lancer.vy - state.shuriken.vy;
+    const closing = relVx * nx + relVy * ny;
+    if (closing <= 0) return;
+
+    const impactStrength = clamp(closing * 0.9 + 260, 120, 540);
+    const damage = clamp(8 + closing * 0.2, 5, 160);
+
+    const penetration = minDist - dist;
+    if (penetration > 0) {
+      state.shuriken.x += nx * penetration * 0.7;
+      state.shuriken.y += ny * penetration * 0.7;
+      state.lancer.x -= nx * penetration * 0.3;
+      state.lancer.y -= ny * penetration * 0.3;
     }
-    ctx.closePath();
-    ctx.fill(); ctx.stroke();
-    ctx.restore();
+
+    state.shuriken.applyImpulse(nx * impactStrength, ny * impactStrength);
+    state.lancer.applyImpulse(-nx * impactStrength * 0.55, -ny * impactStrength * 0.55);
+    state.shuriken.spin += closing * 0.02 + 5;
+    state.lancer.turnAssist += (Math.random() > 0.5 ? 1 : -1) * 0.6;
+
+    state.stats.damage += damage;
+    const energyBoost = 14 + Math.sqrt(damage) * 2.5;
+    state.stats.energy = clamp(state.stats.energy + energyBoost, 0, 160);
+
+    const now = performance.now();
+    if (now - state.lastImpactTime < 1100) {
+      state.stats.comboChain += 1;
+    } else {
+      state.stats.comboChain = 1;
+    }
+    state.lastImpactTime = now;
+    state.comboTimer = 1.2;
+    state.stats.maxCombo = Math.max(state.stats.maxCombo, state.stats.comboChain);
   }
 
-  function reflectOnBounds(obj, b){
-    let bounced = false;
-    if(obj.x < b.x){ obj.x = b.x; obj.vx = Math.abs(obj.vx); bounced = true; }
-    if(obj.x > b.x + b.w){ obj.x = b.x + b.w; obj.vx = -Math.abs(obj.vx); bounced = true; }
-    if(obj.y < b.y){ obj.y = b.y; obj.vy = Math.abs(obj.vy); bounced = true; }
-    if(obj.y > b.y + b.h){ obj.y = b.y + b.h; obj.vy = -Math.abs(obj.vy); bounced = true; }
-    if(bounced) state.bounces++;
-  }
-
-  function circlePointDistance(cx, cy, px, py){ return Math.hypot(px-cx, py-cy); }
-
-  function lanceTip(l){
-    // tip in world space
-    return { x: l.x + Math.cos(l.angle)*l.tip, y: l.y + Math.sin(l.angle)*l.tip };
-  }
-
-  function collide(){
-    const l = state.lance, s = state.shuriken;
-    const tip = lanceTip(l);
-    const d = circlePointDistance(s.x, s.y, tip.x, tip.y);
-    if(d < s.radius*0.9){
-      // impact — shuriken deflects, lance recoils; damage proportional to closing speed
-      const relVx = l.vx - s.vx, relVy = l.vy - s.vy;
-      const closing = vecLen(relVx, relVy);
-      const dmg = clamp(Math.floor(closing*0.08), 1, 50);
-      state.damage += dmg;
-
-      // Simple elastic impulse along normal
-      const nx = (tip.x - s.x)/Math.max(d, 0.0001);
-      const ny = (tip.y - s.y)/Math.max(d, 0.0001);
-      const impulse = 280;
-      s.vx -= nx * impulse; s.vy -= ny * impulse;
-      l.vx += nx * impulse*0.6; l.vy += ny * impulse*0.6;
-
-      // Add spins / turns
-      s.spin *= 1.02;
-      l.targetTurn += (Math.random() > 0.5 ? 1 : -1) * 0.6;
+  function applyFocusEffect(dt) {
+    if (!input.focus || state.stats.energy <= 0) return;
+    const slowFactor = Math.pow(0.9, dt * 60);
+    state.shuriken.vx *= slowFactor;
+    state.shuriken.vy *= slowFactor;
+    state.stats.energy = clamp(state.stats.energy - dt * 18, 0, 160);
+    if (state.stats.energy <= 0) {
+      input.focus = false;
     }
   }
 
-  function step(dt){
-    if(paused) return;
-    const {lance: l, shuriken: s, bounds: b} = state;
-    // integrate
-    l.x += l.vx * dt; l.y += l.vy * dt;
-    s.x += s.vx * dt; s.y += s.vy * dt;
+  function update(dt) {
+    if (state.paused) {
+      return;
+    }
 
-    // subtle air drag
-    l.vx *= 0.999; l.vy *= 0.999;
-    s.vx *= 0.999; s.vy *= 0.999;
+    if (input.shift && state.stats.energy > 5) {
+      input.focus = true;
+    } else if (!input.shift) {
+      input.focus = false;
+    }
 
-    // rotation
-    const desired = Math.atan2(l.vy, l.vx) + l.targetTurn;
-    const turn = (desired - l.angle + Math.PI*3)%(Math.PI*2) - Math.PI;
-    l.angle += clamp(turn, -4*dt, 4*dt);
-    s.angle += s.spin * dt;
+    const timeScale = state.slowMotion ? 0.35 : 1;
+    const scaledDt = dt * timeScale;
 
-    // bounds
-    reflectOnBounds(l, b);
-    reflectOnBounds(s, b);
+    state.lancer.vy += 18 * scaledDt;
+    state.shuriken.vy += 24 * scaledDt;
 
-    // collide
-    collide();
+    state.lancer.integrate(scaledDt);
+    state.shuriken.integrate(scaledDt);
+
+    state.lancer.alignToVelocity(scaledDt);
+    state.shuriken.angle += state.shuriken.spin * scaledDt;
+    state.shuriken.spin *= Math.pow(0.99, scaledDt * 60);
+
+    applyFocusEffect(scaledDt);
+
+    if (state.lancer.bounce(ARENA)) state.stats.bounces += 1;
+    if (state.shuriken.bounce(ARENA)) state.stats.bounces += 1;
+
+    resolveImpact();
+
+    if (state.stats.comboChain > 0) {
+      state.comboTimer -= scaledDt;
+      if (state.comboTimer <= 0) {
+        state.stats.comboChain = 0;
+        state.comboTimer = 0;
+      }
+    }
+
+    state.stats.energy = clamp(state.stats.energy + scaledDt * 2.2, 0, 160);
   }
 
-  function render(){
-    const {bounds:b, lance:l, shuriken:s, bounces, damage} = state;
-    ctx.clearRect(0,0,W,H);
-    // board background
-    ctx.fillStyle = '#fff8e6';
-    ctx.fillRect(b.x-6,b.y-6,b.w+12,b.h+12);
-    drawBounds(b);
-    drawLance(l);
-    drawShuriken(s);
-
-    ui.damage.textContent = damage;
-    ui.bounces.textContent = bounces;
-  }
-
-  function loop(now){
-    const dt = clamp((now - lastTime)/1000, 0, 0.033);
-    lastTime = now;
-    const fps = 1/dt;
-    fpsAvg = fpsAvg*0.9 + fps*0.1;
-    ui.fps.textContent = fpsAvg.toFixed(0);
-
-    step(dt);
+  function frame(now) {
+    const { dt, fps } = state.fpsMeter.sample(now);
+    update(state.paused ? 0 : dt);
     render();
-    requestAnimationFrame(loop);
+    updateUI(fps);
+    requestAnimationFrame(frame);
   }
 
-  // Interactions
-  canvas.addEventListener('click', (e)=>{
+  function impulseLancer(x, y) {
+    const lancer = state.lancer;
+    const dx = x - lancer.x;
+    const dy = y - lancer.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const directionX = dx / dist;
+    const directionY = dy / dist;
+
+    const energyFactor = clamp(state.stats.energy / 90, 0.6, 2.4);
+    const impulsePower = 240 * energyFactor;
+    lancer.applyImpulse(directionX * impulsePower, directionY * impulsePower);
+    lancer.turnAssist += directionY * 0.5 - directionX * 0.2;
+
+    state.stats.energy = clamp(state.stats.energy - 22, 0, 160);
+  }
+
+  function canvasPointer(event) {
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left, y = e.clientY - rect.top;
-    const l = state.lance;
-    // nudge lance towards click
-    const dx = x - l.x, dy = y - l.y;
-    const L = Math.hypot(dx, dy) || 1;
-    l.vx += dx/L * 200;
-    l.vy += dy/L * 200;
-    l.targetTurn += 0.5;
+    const x = (event.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (event.clientY - rect.top) * (canvas.height / rect.height);
+    impulseLancer(x, y);
+  }
+
+  buttons.reset.addEventListener('click', () => {
+    resetGame();
   });
 
-  window.addEventListener('keydown', (e)=>{
-    if(e.key==='r' || e.key==='R'){ reset(); }
-    if(e.key==='p' || e.key==='P'){ paused = !paused; ui.pauseBtn.textContent = paused? 'Resume (P)' : 'Pause (P)'; }
+  buttons.pause.addEventListener('click', () => {
+    state.paused = !state.paused;
+    updateUI(state.fpsMeter.smoothed);
   });
 
-  ui.resetBtn.onclick = () => reset();
-  ui.pauseBtn.onclick = () => { paused = !paused; ui.pauseBtn.textContent = paused? 'Resume (P)' : 'Pause (P)'; };
+  buttons.slow.addEventListener('click', () => {
+    state.slowMotion = !state.slowMotion;
+    updateUI(state.fpsMeter.smoothed);
+  });
 
-  reset();
-  requestAnimationFrame(loop);
+  buttons.trail.addEventListener('click', () => {
+    state.trail = !state.trail;
+    updateUI(state.fpsMeter.smoothed);
+  });
+
+  window.addEventListener('keydown', (event) => {
+    if (event.repeat) return;
+    switch (event.key) {
+      case 'r':
+      case 'R':
+        resetGame();
+        break;
+      case 'p':
+      case 'P':
+        state.paused = !state.paused;
+        break;
+      case 's':
+      case 'S':
+        state.slowMotion = !state.slowMotion;
+        break;
+      case 't':
+      case 'T':
+        state.trail = !state.trail;
+        break;
+      case 'Shift':
+        input.shift = true;
+        input.focus = state.stats.energy > 0;
+        break;
+      default:
+        break;
+    }
+    updateUI(state.fpsMeter.smoothed);
+  });
+
+  window.addEventListener('keyup', (event) => {
+    if (event.key === 'Shift') {
+      input.shift = false;
+      input.focus = false;
+    }
+  });
+
+  let pointerActive = false;
+
+  canvas.addEventListener('pointerdown', (event) => {
+    pointerActive = true;
+    canvasPointer(event);
+  });
+
+  canvas.addEventListener('pointermove', (event) => {
+    if (!pointerActive) return;
+    canvasPointer(event);
+  });
+
+  window.addEventListener('pointerup', () => {
+    pointerActive = false;
+  });
+
+  window.addEventListener('pointercancel', () => {
+    pointerActive = false;
+  });
+
+  canvas.addEventListener('pointerleave', () => {
+    pointerActive = false;
+  });
+
+  canvas.addEventListener('pointercancel', () => {
+    pointerActive = false;
+  });
+
+  resetGame();
+  updateUI();
+  requestAnimationFrame((now) => {
+    state.fpsMeter.last = now;
+    requestAnimationFrame(frame);
+  });
 })();

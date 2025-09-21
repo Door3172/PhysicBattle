@@ -1,39 +1,38 @@
-# Lance vs Shuriken (Static Web Game)
+# PhysicBattle
 
-一個**完全靜態**的物理小遊戲（Canvas），可以：
+PhysicBattle 是一款純前端、單一頁面的 2D 物理對戰小遊戲。騎槍手與手裡劍在封閉的競技場內高速碰撞，所有效果都以 Canvas 繪製，無需任何框架或套件即可離線遊玩與部署。
 
-- 直接打開 `index.html` 本地玩（不需要安裝任何套件）。
-- 直接上傳到 GitHub 後開啟 **GitHub Pages**（已附 `deploy-pages.yml` 工作流程，也可用 Settings→Pages 指定 `main` 分支）。
+## 遊戲亮點
+- **完全靜態**：只有 `index.html`、`style.css` 與 `main.js` 三個檔案，雙擊即可啟動。
+- **重新設計的介面**：資訊面板、操作提示、殘影與慢動作效果讓對戰更具戲劇張力。
+- **能量與連擊系統**：碰撞將累積能量並觸發連擊計數，提供更多操作深度。
+- **無框架依賴**：可直接部署到 GitHub Pages 或任意靜態主機。
 
-## 操作
-- 點擊畫面：給長矛一個推力（朝點擊方向）。
-- **R**：重置。
-- **P**：暫停/繼續。
+## 操作方式
+- 滑鼠點擊或拖曳畫布：對騎槍手施加瞬間衝力。
+- 長按 **Shift**：聚焦手裡劍並降低其速度（消耗能量）。
+- **R**：重置對戰。
+- **P**：暫停 / 繼續。
+- **S**：切換慢動作模式。
+- **T**：切換殘影效果。
 
-## 本地測試
+## 本地遊玩
 1. 下載或解壓縮整個資料夾。
-2. 直接雙擊打開 `index.html`。
-   - 若瀏覽器有安全性限制，建議以 VS Code 的 **Live Server** 或任意靜態伺服器開啟。
+2. 直接以瀏覽器開啟 `index.html`。
+   - 若瀏覽器有跨來源限制，可使用 VS Code 的 **Live Server** 擴充套件或任意靜態伺服器。
 
-## 上傳到 GitHub Pages（兩種方式）
+## 部署到 GitHub Pages
+1. 將專案 push 至 GitHub 的任一 repository（建議 repo 名稱即為 `PhysicBattle`）。
+2. 進入 **Settings → Pages**：
+   - Source 選擇 `Deploy from a branch`
+   - Branch 選擇 `main`，資料夾選擇 `/ (root)`
+3. 儲存後稍待片刻，即可取得公開網址。
 
-### A) 用 Settings 直接開啟
-1. 新建一個 repo（例如 `lance-vs-shuriken`）。
-2. 把檔案全部放到 repo 根目錄並 push。
-3. 進 **Settings → Pages**：
-   - **Source** 選 `Deploy from a branch`
-   - Branch 選 `main`、資料夾選 `/ (root)`，按 **Save**。
-4. 等待幾十秒，右上角會出現公開網址。
-
-### B) 用 GitHub Actions（本專案已附）
-1. push 後，進 **Actions** 啟用 workflows。
-2. 首次會跑 `Deploy static content to Pages`，完成後 Pages 自動更新。
-
-> 若你的帳號是 organization，記得要允許 Pages/Actions 權限。
+> 若使用 GitHub Actions，自行加入簡單的靜態部署 workflow 即可自動發布。
 
 ## 自訂
-- 遊戲邏輯寫在 `main.js`，樣式在 `style.css`。
-- 全部是純前端靜態檔，方便加素材、改參數，或嵌入你現有作品。
+- 遊戲邏輯集中於 `main.js`；
+- 介面樣式在 `style.css`；
+- HTML 結構與輔助資訊在 `index.html`。
 
-## 授權
-MIT License（見 `LICENSE`）。
+所有程式碼皆以 MIT License 釋出，歡迎分支、改作或整合至其他專案。
