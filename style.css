@@ -1,0 +1,10 @@
+*{box-sizing:border-box}html,body{height:100%;margin:0;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial}
+body{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:12px;background:#f5eedd;color:#333}
+.hud{display:flex;gap:20px;align-items:center;justify-content:center;flex-wrap:wrap;margin-top:12px}
+.title{font-weight:800;font-size:28px;letter-spacing:1px}
+.title span{opacity:.6;font-weight:700;margin:0 8px}
+.stats{display:flex;gap:16px;font-weight:700}
+.buttons{display:flex;gap:8px}
+button{padding:8px 12px;border-radius:10px;border:1px solid #333;background:#fff;cursor:pointer}
+button:active{transform:translateY(1px)}
+#game{background:#fff;border:8px solid #222;box-shadow:0 6px 20px rgba(0,0,0,.15);max-width:92vw;height:auto}

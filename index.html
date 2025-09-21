@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lance vs Shuriken — Physics Mini Duel</title>
+  <meta name="description" content="A tiny physics-based duel: Lance vs Shuriken. Runs fully static for GitHub Pages." />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="hud">
+    <div class="title">Lance <span>vs</span> Shuriken</div>
+    <div class="stats">
+      <div>Joust Damage: <span id="damage">0</span></div>
+      <div>Bounces: <span id="bounces">0</span></div>
+      <div>FPS: <span id="fps">0</span></div>
+    </div>
+    <div class="buttons">
+      <button id="resetBtn">Reset (R)</button>
+      <button id="pauseBtn">Pause (P)</button>
+    </div>
+  </div>
+  <canvas id="game" width="920" height="920" aria-label="Game canvas"></canvas>
+  <script src="./main.js"></script>
+</body>
+</html>
